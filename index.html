@@ -11,6 +11,7 @@
 
         html,
         body {
+            background-color: #ffeeaa;
             height: 100%;
         }
 
@@ -40,6 +41,15 @@
 
         .header-item {
             padding-right: 1rem;
+            flex-grow: 1;
+        }
+
+        .header-item.grow {
+            flex-grow: 100;
+        }
+
+        #fileinput {
+            width: 100%;
         }
 
         #editarea {
@@ -49,6 +59,7 @@
 
         #drop-info {
             position: fixed;
+            text-align: center;
             top: 0;
             left: 0;
             right: 0;
@@ -78,20 +89,37 @@
         #drop-info.active {
             display: flex;
         }
+
+        button {
+            padding: .5rem;
+            border: 1px solid gray;
+            background-color: #ff9955;
+            border-radius: .5rem;
+            font-weight: bold;
+            font-size: .9rem;
+        }
     </style>
 </head>
 <body>
 
-<div id="drop-info" class="active">
-    <span>Drag+drop a ZR rms file here!</span>
-</div>
+<label for="fileinput">
+    <div id="drop-info" class="active">
+        <span>Drag+drop a ZR rms file here!<br>Or click. Works even better.</span>
+    </div>
+</label>
 <div class="container">
     <div id="header">
         <div class="header-item">
             <h1>ZR Edit</h1>
         </div>
+        <div class="header-item grow">
+            <input id="fileinput" type="file">
+        </div>
         <div class="header-item">
             <button id="save" onclick="save()">Save</button>
+        </div>
+        <div class="header-item">
+            <button id="normalize" onclick="autoformat()">Autoformat</button>
         </div>
     </div>
     <div id="box">
@@ -106,6 +134,7 @@
     var currentRmsFileName;
     var currentFileName;
     let target = document.documentElement;
+    let fileinput = document.querySelector('#fileinput');
     let dropInfo = document.querySelector('#drop-info');
 
     window.addEventListener('dragover', (e) => {
@@ -122,29 +151,58 @@
     target.addEventListener('drop', (e) => {
         e.preventDefault();
 
-        if (e.dataTransfer.files.length > 0) {
-            dropInfo.classList.remove('active');
-            let firstFile = e.dataTransfer.files[0];
+        fileinput.files = e.dataTransfer.files;
+    });
 
-            currentFileName = firstFile.name;
+    fileinput.addEventListener('change', (e) => {
+        e.preventDefault();
 
-            JSZip.loadAsync(firstFile.slice(0, firstFile.size, 'application/zip')).then(function (d) {
-                currentZip = d;
-                for (let filename in d.files) {
-                    if (filename.endsWith('.rms')) {
-                        currentRmsFileName = filename;
-                        d.file(filename).async('text').then(function (content) {
-                            document.querySelector('#editarea').innerHTML = content;
-                        });
-                    }
-                }
-            });
+        if (e.target.files.length > 0) {
+            let firstFile = e.target.files[0];
 
+            handleFile(firstFile);
 
         } else {
-            console.log("no files found for drop event");
+            console.log("no files found for change event");
         }
     });
+
+    function handleFile(firstFile) {
+        currentFileName = firstFile.name;
+        dropInfo.classList.remove('dragging');
+
+        let marker = firstFile.slice(0, Math.min(firstFile.size, 5), 'application/octet-stream');
+
+        let reader = new FileReader();
+        reader.onload = function (e) {
+            let contents = e.target.result;
+            if (!contents.startsWith('PK\x03\x04')) {
+                alert("This is not a ZR rms file. Sorry! Can't deal with that.");
+                return;
+            } else {
+
+                JSZip.loadAsync(firstFile.slice(0, firstFile.size, 'application/zip')).then(function (d) {
+                    currentZip = d;
+                    for (let filename in d.files) {
+                        if (d.files.hasOwnProperty(filename)) {
+                            if (filename.endsWith('.rms')) {
+                                currentRmsFileName = filename;
+                                d.file(filename).async('text').then(function (content) {
+                                    document.querySelector('#editarea').value = content;
+                                });
+                                dropInfo.classList.remove('active');
+                                return;
+                            }
+                        }
+                    }
+                    alert("No .rms file found inside the archive!");
+                });
+            }
+
+        };
+        reader.readAsText(marker);
+
+    }
 
     function save() {
         currentZip.file(currentRmsFileName, document.querySelector('#editarea').value);
@@ -152,6 +210,88 @@
             .then(function (content) {
                 saveAs(content, currentFileName);
             });
+    }
+
+    function autoformat() {
+        let oldValue = document.querySelector('#editarea').value;
+        document.querySelector('#editarea').value = normalizeMap(oldValue);
+    }
+
+    function normalizeMap(mapcontent) {
+        mapcontent = mapcontent.replace(/#include_drs\s+random_map.def/g, "#include_drsrandom_mapdef");
+        mapcontent = mapcontent.replace(/\r?\n/g, " ");
+        mapcontent = mapcontent.replace(/\/\*.*?\*\//g, "");
+        mapcontent = mapcontent.replace(/\s+/g, " ");
+        mapcontent = mapcontent.replace(/\s([a-z_]+)/g, "\n$1");
+        mapcontent = mapcontent.replace(/</g, "\n\n<");
+        mapcontent = mapcontent.replace(/#/g, "\n#");
+        mapcontent = mapcontent.replace(/\{/g, "\n{");
+        mapcontent = mapcontent.replace(/\}/g, "\n}\n");
+        mapcontent = mapcontent.replace(/ \n/g, "\n");
+        mapcontent = mapcontent.replace(/#include_drsrandom_mapdef/g, "#include_drs random_map.def");
+        mapcontent = mapcontent.replace(/^\n+/g, "");
+
+        let lines = mapcontent.split("\n");
+
+        let mapLines = [];
+        let indent = 0;
+        let lineNr = 0;
+        for (let line of lines) {
+            lineNr++;
+            let indentBefore = getIndentBefore(line);
+            let indentAfter = getIndentAfter(line);
+            mapLines.push(getIndent(indent + indentBefore) + line);
+            indent += indentAfter;
+
+        }
+
+        return mapLines.join("\n");
+    }
+
+    function getIndentBefore(line) {
+        if (line.startsWith("elseif")) {
+            return -1;
+        }
+        if (line.startsWith("else")) {
+            return -1;
+        }
+        if (line.startsWith("endif")) {
+            return -1;
+        }
+        if (line.startsWith("end_random")) {
+            return -1;
+        }
+        if (line.startsWith("}")) {
+            return -1;
+        }
+        return 0;
+    }
+
+    function getIndentAfter(line) {
+        if (line.startsWith("if")) {
+            return 1;
+        }
+        if (line.startsWith("endif")) {
+            return -1;
+        }
+        if (line.startsWith("{")) {
+            return 1;
+        }
+        if (line.startsWith("}")) {
+            return -1;
+        }
+        if (line.startsWith("start_random")) {
+            return 1;
+        }
+        if (line.startsWith("end_random")) {
+            return -1;
+        }
+        return 0;
+    }
+
+    function getIndent(i) {
+        //if (i < 0) { return "XXXXXX"; }
+        return " ".repeat(Math.max(i * 4, 0));
     }
 
 </script>
