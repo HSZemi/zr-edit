@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ZR Edit</title>
+    <style>
+        * {
+            margin: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            font-family: sans-serif;
+        }
+
+        .container {
+            height: 100%;
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+        }
+
+        #header {
+            display: flex;
+            flex-direction: row;
+        }
+
+        #box {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            flex-grow: 1;
+        }
+
+        .header-item {
+            padding-right: 1rem;
+        }
+
+        #editarea {
+            height: 100%;
+            flex-grow: 1;
+        }
+
+        #drop-info {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 500;
+            width: 100%;
+            height: 100%;
+            background-color: #777;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        #drop-info span {
+            background-color: #777;
+            font-size: 4rem;
+            font-weight: bold;
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        #drop-info.dragging {
+            background-color: yellow;
+        }
+
+        #drop-info.active {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+
+<div id="drop-info" class="active">
+    <span>Drag+drop a ZR rms file here!</span>
+</div>
+<div class="container">
+    <div id="header">
+        <div class="header-item">
+            <h1>ZR Edit</h1>
+        </div>
+        <div class="header-item">
+            <button id="save" onclick="save()">Save</button>
+        </div>
+    </div>
+    <div id="box">
+        <textarea id="editarea"></textarea>
+    </div>
+</div>
+
+<script src="js/jszip.min.js"></script>
+<script src="js/FileSaver.js"></script>
+<script type="text/javascript">
+    var currentZip;
+    var currentRmsFileName;
+    var currentFileName;
+    let target = document.documentElement;
+    let dropInfo = document.querySelector('#drop-info');
+
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropInfo.classList.add('dragging');
+    });
+    window.addEventListener('dragleave', (e) => {
+        if (e.pageX !== 0 && e.pageY !== 0) {
+            return false;
+        }
+        dropInfo.classList.remove('dragging');
+    });
+
+    target.addEventListener('drop', (e) => {
+        e.preventDefault();
+
+        if (e.dataTransfer.files.length > 0) {
+            dropInfo.classList.remove('active');
+            let firstFile = e.dataTransfer.files[0];
+
+            currentFileName = firstFile.name;
+
+            JSZip.loadAsync(firstFile.slice(0, firstFile.size, 'application/zip')).then(function (d) {
+                currentZip = d;
+                for (let filename in d.files) {
+                    if (filename.endsWith('.rms')) {
+                        currentRmsFileName = filename;
+                        d.file(filename).async('text').then(function (content) {
+                            document.querySelector('#editarea').innerHTML = content;
+                        });
+                    }
+                }
+            });
+
+
+        } else {
+            console.log("no files found for drop event");
+        }
+    });
+
+    function save() {
+        currentZip.file(currentRmsFileName, document.querySelector('#editarea').value);
+        currentZip.generateAsync({type: "blob"})
+            .then(function (content) {
+                saveAs(content, currentFileName);
+            });
+    }
+
+</script>
+</body>
+</html>
