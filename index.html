@@ -167,6 +167,24 @@
         }
     });
 
+    function checkFiles(files) {
+        let containsCompressedFiles = false;
+        let compressedFiles = [];
+        for (let filename in files) {
+            if (files.hasOwnProperty(filename)) {
+                if(files[filename]._data.uncompressedSize - files[filename]._data.compressedSize !== 0){
+                    containsCompressedFiles = true;
+                    compressedFiles.push(filename);
+                }
+            }
+        }
+        if(containsCompressedFiles){
+            alert("Your ZR file contains compressed files. The game will not be able to process your ZR file properly.\n\n" +
+                "Compressed files: " + compressedFiles);
+        }
+        return !containsCompressedFiles;
+    }
+
     function handleFile(firstFile) {
         currentFileName = firstFile.name;
         dropInfo.classList.remove('dragging');
@@ -186,6 +204,7 @@
                     for (let filename in d.files) {
                         if (d.files.hasOwnProperty(filename)) {
                             if (filename.endsWith('.rms')) {
+                                checkFiles(d.files);
                                 currentRmsFileName = filename;
                                 d.file(filename).async('text').then(function (content) {
                                     document.querySelector('#editarea').value = content;
